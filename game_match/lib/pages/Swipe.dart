@@ -65,7 +65,7 @@ class _SwipePageState extends State<SwipePage> with TickerProviderStateMixin {
     if (user != null) {
       _fetchGames(user.uid);
     }
-    _fetchSubscriptionStatus(); 
+    _fetchSubscriptionStatus();
     _loadInterstitialAd();
 
     _heartAnimationController = AnimationController(
@@ -611,19 +611,26 @@ void _onGameSwiped(int index) async {
                                       Positioned(
                                         bottom: 16.0,
                                         left: 16.0,
-                                        child: Text(
-                                          game.name ?? 'Unknown Game',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 20.0,
-                                            fontWeight: FontWeight.bold,
-                                            shadows: [
-                                              Shadow(
-                                                offset: Offset(1.0, 1.0),
-                                                blurRadius: 3.0,
-                                                color: Colors.black,
-                                              ),
-                                            ],
+                                        right: 16.0,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8.0),
+                                          child: Text(
+                                            game.name ?? 'Unknown Game',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 20.0,
+                                              fontWeight: FontWeight.bold,
+                                              shadows: [
+                                                Shadow(
+                                                  offset: Offset(1.0, 1.0),
+                                                  blurRadius: 3.0,
+                                                  color: Colors.black,
+                                                ),
+                                              ],
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                       ),
@@ -730,7 +737,7 @@ void _onGameSwiped(int index) async {
                                             ],
                                           ),
                                         );
-                                      }),
+                                      }).toList(),
                                   ],
                                 ),
                               ],
@@ -754,7 +761,10 @@ void _onGameSwiped(int index) async {
                           ),
                           Expanded(
                             child: Text(
-                              games.isNotEmpty ? games.first.releaseDates.join(", ") ?? "Unknown release date" : " ",
+                              games.isNotEmpty &&
+                                      games.first.releaseDates.isNotEmpty
+                                  ? games.first.releaseDates.first
+                                  : "Unknown release date",
                               style: const TextStyle(fontSize: 14),
                               overflow: TextOverflow.visible, // Allows multiline display
                             ),
@@ -801,42 +811,161 @@ void _onGameSwiped(int index) async {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 25.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    FloatingActionButton(
-                      heroTag: 'dislike',
-                      backgroundColor: Colors.blue,
-                      shape: const CircleBorder(),
-                      onPressed: _onDislike,
-                      child: const Icon(Icons.heart_broken,
-                          color: Colors.white, size: 32),
+  padding: const EdgeInsets.symmetric(vertical: 25.0),
+  child: Row(
+    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+    children: [
+      // Dislike Button
+      FloatingActionButton(
+        heroTag: 'dislike',
+        backgroundColor: Colors.blue,
+        shape: const CircleBorder(),
+        onPressed: _onDislike,
+        child: const Icon(Icons.heart_broken, color: Colors.white, size: 32),
+      ),
+      // Undo Button with Custom Premium Dialog for Non-Premium Users
+      FloatingActionButton(
+        heroTag: 'undo',
+        backgroundColor: Colors.grey.shade300,
+        shape: const CircleBorder(),
+        onPressed: () {
+          if (_isPremium) {
+            _onUndo(); // Allow Undo for Premium Users
+          } else {
+            // Show Upgrade Dialog for Free Users
+            showDialog(
+              context: context,
+              builder: (BuildContext context) {
+                return AlertDialog(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16.0),
+                  ),
+                  title: const Text(
+                    'Undo Button for Premium members',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
                     ),
-                    FloatingActionButton(
-                      heroTag: 'undo',
-                      backgroundColor: Colors.grey.shade300,
-                      shape: const CircleBorder(),
-                      onPressed: _onUndo,
-                      child: const Icon(Icons.undo, size: 32, color: Colors.black,),
+                  ),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'The Undo feature is for Premium members. Please upgrade to Premium to access this feature and more!',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 16),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Enjoy benefits like:',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF41B1F1),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Text(
+                            'Unlimited Undo and Swipes',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Text(
+                            'Create threads in the Community',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Text(
+                            'Ad-Free Experience',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Text(
+                            'Exclusive Deals',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: const [
+                          Text(
+                            'And More!',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () {
+                        Navigator.of(context).pop(); // Close the dialog
+                      },
+                      child: Text(
+                        'Cancel',
+                        style: TextStyle(color: themeNotifier.isDarkMode ? Colors.white : Colors.black),
+                      ),
                     ),
-                    FloatingActionButton(
-                      heroTag: 'like',
-                      backgroundColor: Colors.pink[300],
-                      shape: const CircleBorder(),
-                      onPressed: _onLike,
-                      child: const Icon(Icons.favorite,
-                          color: Colors.white, size: 32),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(context).pop(); // Close the dialog
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) =>
+                                SubscriptionManagementScreen(),
+                          ),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF41B1F1),
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Upgrade'),
                     ),
                   ],
-                ),
-              ),
-            ],
+                );
+              },
+            );
+          }
+        },
+        child: const Icon(Icons.undo, size: 32, color: Colors.black),
+      ),
+      // Like Button
+      FloatingActionButton(
+        heroTag: 'like',
+        backgroundColor: Colors.pink[300],
+        shape: const CircleBorder(),
+        onPressed: _onLike,
+        child: const Icon(Icons.favorite, color: Colors.white, size: 32),
+      ),
+    ],
+  ),
+),
+],
           ),
           // Swiping instruction UI
           if (_showSwipeInstruction)
             Positioned(
-              left: MediaQuery.of(context).size.width / 1.9 - 80,
+              left: MediaQuery.of(context).size.width / 1.85 - 80,
               top: MediaQuery.of(context).size.height * 0.2,
               child: SlideTransition(
                 position: _instructionWagAnimation!,
@@ -850,18 +979,18 @@ void _onGameSwiped(int index) async {
                       const SizedBox(height: 8),
                     if (games.isEmpty)...[
                       const Text(
-                      'Set your preferences', // Display message if no games are found
-                      style: TextStyle(
-                        color: Colors.black,
-                        fontSize: 20,
-                      ),
-                      ),
-                      const Text(
-                      'No games found',
-                      style: TextStyle(
-                        color: Colors.black,
-                        fontSize: 12,
-                      ),
+                        'Set your preferences',// Display message if no games are found
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 20,
+                        ),
+                        ),
+                        const Text(
+                          'No games found',
+                          style: TextStyle(
+                          color: Colors.black,
+                          fontSize: 12,
+                        )
                       ),
                     ],
                       const SizedBox(height: 8),
@@ -1042,8 +1171,6 @@ class CustomAdPage extends StatelessWidget {
 }
 // custom dialog with countdown timer for swipe limit reset
 class SwipeLimitDialog extends StatefulWidget {
-  const SwipeLimitDialog({super.key});
-
   @override
   _SwipeLimitDialogState createState() => _SwipeLimitDialogState();
 }
@@ -1066,10 +1193,10 @@ class _SwipeLimitDialogState extends State<SwipeLimitDialog> {
   }
 
   void _startTimer() {
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    _timer = Timer.periodic(Duration(seconds: 1), (timer) {
       setState(() {
         if (_timeRemaining.inSeconds > 0) {
-          _timeRemaining -= const Duration(seconds: 1);
+          _timeRemaining -= Duration(seconds: 1);
         } else {
           _timer.cancel();
         }
@@ -1085,29 +1212,30 @@ class _SwipeLimitDialogState extends State<SwipeLimitDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final themeNotifier = Provider.of<ThemeNotifier>(context);
     String formattedTime = _formatDuration(_timeRemaining);
 
     return AlertDialog(
-      title: const Text('Daily Swipe Limit Reached'),
+      title: Text('Daily Swipe Limit Reached'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
+          Text(
               'You have reached your daily swipe limit. Upgrade to Premium for unlimited swipes and an ad-free experience!'),
-          const SizedBox(height: 16),
+          SizedBox(height: 16),
           Text(
             'Time until swipes reset: $formattedTime',
-            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red),
           ),
         ],
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.black,
-          ),
           child: Text('Cancel'),
+          style: TextButton.styleFrom(
+            foregroundColor: themeNotifier.isDarkMode ? Colors.white : Colors.black,
+          ),
         ),
         ElevatedButton(
           onPressed: () {
@@ -1119,11 +1247,11 @@ class _SwipeLimitDialogState extends State<SwipeLimitDialog> {
               ),
             );
           },
+          child: Text('Upgrade'),
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF41B1F1),
+            backgroundColor: Color(0xFF41B1F1),
             foregroundColor: Colors.white,
           ),
-          child: Text('Upgrade'),
         ),
       ],
     );

@@ -126,7 +126,7 @@ def load_game_data():
         ]
         return games
     else:
-        logging.error(f"Error fetching games: {response.status_code} {response.text}")
+        #logging.error(f"Error fetching games: {response.status_code} {response.text}")
         if response.status_code == 401:
             logging.warning("Access token might be expired; attempting to re-authenticate.")
             authenticate()  # Try to refresh the token
@@ -173,16 +173,32 @@ def user_preferences(user_id):
 
     # Use get with default values to avoid KeyErrors
     user_preferences = {
-        'rating': user_data.get('interests', {}).get('rating', 0.0),  # Defaults to 0.0 if missing"),
+        'rating': user_data.get('interests', {}).get('rating', "Select"),  # Defaults to 0.0 if missing"),
         'selectedGenres': [genre.lower() for genre in user_data.get('selectedGenres', [])],
-        'platform': user_data.get('interests', {}).get('platform', ""),  # Defaults to empty string if missing
-        'gameMode': user_data.get('interests', {}).get('gameMode', ""),  # Defaults to empty string if missing
-        'playerPerspective': user_data.get('interests', {}).get('playerPerspective', ""),  # Defaults to empty string if missing
-        'likedGames': user_data.get('wishlist', []), # Defaults to empty list if missing
+        'platform': user_data.get('interests', {}).get('platform', "Select"),  # Defaults to empty string if missing
+        'gameMode': user_data.get('interests', {}).get('gameMode', "Select"),  # Defaults to empty string if missing
+        'playerPerspective': user_data.get('interests', {}).get('playerPerspective', "Select"),  # Defaults to empty string if missing
     }
 
-    logging.debug(f"User preferences for user_id {user_id}: {user_preferences}")
+    #logging.debug(f"User preferences for user_id {user_id}: {user_preferences}")
     return user_preferences
+def get_wishlist(user_id):
+    """Retrieve game IDs from the user's wishlist collection in Firestore."""
+    try:
+        # Reference the user's wishlist collection
+        wishlist_collection = db.collection('users').document(user_id).collection('wishlist')
+
+        # Get all documents in the wishlist collection
+        wishlist_docs = wishlist_collection.stream()
+
+        # Extract the document IDs (game IDs)
+        wishlist = [doc.id for doc in wishlist_docs]
+        #logging.debug(f"Wishlist for user_id {user_id}: {wishlist}")
+        return wishlist
+    except Exception as e:
+        #logging.error(f"Error retrieving wishlist for user_id {user_id}: {e}")
+        return []
+
 
 def get_reviews_data():
     # Initialize an empty list to store retrieved reviews
@@ -202,12 +218,12 @@ def get_reviews_data():
     return reviews_data
 
 # Enhanced filtering logic with additional debugging
-def content_based_recommendation(user_preferences, games, reviews_data):
+def content_based_recommendation(user_preferences, games, reviews_data, user_id):
     # Set weightings for each preference type
-    GENRE_WEIGHT = 1.0      
+    GENRE_WEIGHT = 5.0      
     PLATFORM_WEIGHT = 1.0    
     GAMEMODE_WEIGHT = 1.0   
-    RATING_WEIGHT = 1.0  
+    RATING_WEIGHT = 0.2
 
 
     # Secondary weights
@@ -217,9 +233,9 @@ def content_based_recommendation(user_preferences, games, reviews_data):
     PLAYERPERSPECTIVE_WEIGHT = 0.2  # Reduced from 0.5 as it's less critical
 
     # Extract user preferences
-    preferred_genres = [genre.lower() for genre in user_preferences.get('selectedGenres', [])]
-    preferred_platform = user_preferences.get('platform', "").lower()
-    preferred_gamemode = user_preferences.get('gameMode', "").lower()
+    preferred_genres = [genre.lower() for genre in user_preferences.get('selectedGenres', [])] if user_preferences.get('selectedGenres') else []
+    preferred_platform = user_preferences.get('platform', "").lower() if user_preferences.get('platform') != "Select" else ""
+    preferred_gamemode = user_preferences.get('gameMode', "").lower() if user_preferences.get('gameMode') != "Select" else ""
 
     liked_games_ids = [game['id'] for game in user_preferences.get('likedGames', [])]
 
@@ -230,13 +246,13 @@ def content_based_recommendation(user_preferences, games, reviews_data):
         genre_match = any(genre in [g.lower() for g in game.genres] for genre in preferred_genres) if preferred_genres else True
         platform_match = preferred_platform in [platform.lower() for platform in game.platforms] if preferred_platform else True
         gamemode_match = preferred_gamemode in [gameMode.lower() for gameMode in game.gameModes] if preferred_gamemode else True
-        rating_match = game.rating >= user_preferences.get('rating', 0.0)
+        
         # Only include games that match ALL critical criteria
-        if genre_match and platform_match and gamemode_match and rating_match:
+        if genre_match and platform_match and  gamemode_match and game.id not in get_wishlist(user_id):
             filtered_games.append(game)
 
     if not filtered_games:
-        logging.warning("No games matched critical criteria (genre, platform, gamemode).")
+        #logging.warning("No games matched critical criteria (genre, platform, gamemode).")
         return []
 
     # Process remaining games with TF-IDF for content similarity
@@ -260,7 +276,8 @@ def content_based_recommendation(user_preferences, games, reviews_data):
         gamemode_score = GAMEMODE_WEIGHT
         
         # Secondary criteria scores
-        rating_score = RATING_WEIGHT if game.rating >= user_preferences.get('rating', 0.0) else 0
+        user_rating = user_preferences.get('rating', "Select")
+        rating_score = RATING_WEIGHT if isinstance(user_rating, (int, float)) and game.rating >= user_rating else 0
         summary_score = SUMMARY_WEIGHT * cosine_similarities[i].sum()
         liked_games_score = LIKED_GAMES_WEIGHT if game.id in liked_games_ids else 0
         perspective_score = PLAYERPERSPECTIVE_WEIGHT if user_preferences.get('playerPerspective', "").lower() in [pp.lower() for pp in game.playerPerspectives] else 0
@@ -287,30 +304,57 @@ def content_based_recommendation(user_preferences, games, reviews_data):
 def recommend(user_id):
     logging.debug(f"Fetching recommendations for user_id: {user_id}")
     try:
+        # Retrieve user document
         user_doc = db.collection('users').document(user_id).get()
-
         if not user_doc.exists:
             logging.error(f"User {user_id} not found")
             return jsonify({'error': 'User not found'}), 404
 
+        # Extract user preferences
         user_preferences = user_doc.to_dict()
-        games = load_game_data()
+        selected_genres = user_preferences.get('selectedGenres', [])
+        platform = user_preferences.get('interests', {}).get('platform', "Select")
+        game_mode = user_preferences.get('interests', {}).get('gameMode', "Select")
+        player_perspective = user_preferences.get('interests', {}).get('playerPerspective', "Select")
+        rating = user_preferences.get('interests', {}).get('rating', "Select")
 
-        if not games:
-            logging.error("No game data available")
-            return jsonify({'error': 'No game data available'}), 500
+        # Check if all preferences are default
+        if (
+            not selected_genres and
+            platform == "Select" and
+            game_mode == "Select" and
+            player_perspective == "Select" and
+            rating == "Select"
+        ):
+            logging.info(f"User {user_id} has default preferences. Clearing recommendations.")
+            # Clear recommendations in Firestore
+            db.collection('users').document(user_id).update({'recommendedGames': []})
+            return jsonify({'message': 'No recommendations generated for default preferences'}), 200
+        else:
+            # Load games and reviews
+            games_loaded = load_game_data()
+            wishlist_game_ids = get_wishlist(user_id)
 
-        reviews_data = get_reviews_data()
-        recommendations = content_based_recommendation(user_preferences, games, reviews_data)
+            # Exclude wishlist games from the recommendations
+            games_to_recommend = [game for game in games_loaded if str(game.id) not in wishlist_game_ids]
 
-        # Update Firestore and Firebase Storage
-        db.collection('users').document(user_id).update({'recommendedGames': recommendations})
-        store_recommended_games(user_id, recommendations)
+            if not games_to_recommend:
+                logging.error("No game data available")
+                return jsonify({'error': 'No game data available'}), 500
 
-        logging.debug(f"Updated recommendations for user_id {user_id}: {recommendations}")
-        return jsonify({'message': 'Recommendations updated successfully'}), 200
+            reviews_data = get_reviews_data()
+
+            # Generate recommendations
+            recommendations = content_based_recommendation(user_preferences, games_to_recommend, reviews_data, user_id)
+
+            # Update Firestore with recommendations
+            db.collection('users').document(user_id).update({'recommendedGames': recommendations})
+            store_recommended_games(user_id, recommendations)
+
+            #logging.debug(f"Updated recommendations for user_id {user_id}: {recommendations}")
+            return jsonify({'message': 'Recommendations updated successfully'}), 200
     except Exception as e:
-        logging.error(f"Error fetching recommendations: {e}")
+        #logging.error(f"Error fetching recommendations for user_id {user_id}: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 # Listen to changes in user preferences
 def listen_to_user_preferences():
@@ -337,9 +381,32 @@ def update_recommendations(user_id):
         return
 
     user_preferences = user_doc.to_dict()
-    games = load_game_data()
+
+    # Check if all preferences are default
+    if (
+        not user_preferences.get('selectedGenres') and
+        user_preferences.get('interests', {}).get('platform') == "Select" and
+        user_preferences.get('interests', {}).get('gameMode') == "Select" and
+        user_preferences.get('interests', {}).get('playerPerspective') == "Select" and
+        user_preferences.get('interests', {}).get('rating') == "Select"
+    ):
+        logging.info(f"User {user_id} has default preferences. No recommendations will be generated.")
+        # Clear recommendations in Firestore
+        db.collection('users').document(user_id).update({'recommendedGames': []})
+        return
+
+    # Load all games and get the user's wishlist
+    games_loaded = load_game_data()
+    wishlist_game_ids = get_wishlist(user_id)
+
+    # Exclude wishlist games from the recommendations
+    games_to_recommend = [game for game in games_loaded if str(game.id) not in wishlist_game_ids]
+
+    #logging.debug(f"Games to recommend for user_id {user_id}: {[game.id for game in games_to_recommend]}")
+
+    # Generate recommendations
     reviews_data = get_reviews_data()
-    recommendations = content_based_recommendation(user_preferences, games, reviews_data)
+    recommendations = content_based_recommendation(user_preferences, games_to_recommend, reviews_data, user_id)
 
     # Update Firestore with new recommendations
     db.collection('users').document(user_id).update({
@@ -349,7 +416,8 @@ def update_recommendations(user_id):
     # Store recommended games in Firebase Storage
     store_recommended_games(user_id, recommendations)
 
-    logging.info(f"Updated recommendations for user_id {user_id}")
+    #logging.info(f"Updated recommendations for user_id {user_id}")
+
 
 # Start the listener in a separate thread to avoid blocking
 listener_thread = threading.Thread(target=listen_to_user_preferences, daemon=True)
